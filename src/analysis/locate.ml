@@ -517,15 +517,19 @@ let find_source ~config ~uid loc =
             in
             let source_in_build =
               let process_dir = Mconfig_dot.get_process_dir t in
-              let path =
+              let remove_dot_pp filename =
+                match String.split_on_char ~sep:'.' filename with
+                | [ name; "pp"; ml_or_mli ] -> name ^ "." ^ ml_or_mli
+                | _ -> filename
+              in
+              let dirname, basename =
                 match cmt_sourcefile with
-                | None -> fname
-                | Some path ->
-                  Printf.sprintf "%s/%s" (Filename.dirname path)
-                    (Filename.basename fname)
+                | None -> (Filename.dirname fname, Filename.basename fname)
+                | Some path -> (Filename.dirname path, Filename.basename fname)
               in
               Filename.concat process_dir
-                (Printf.sprintf "_build/default/%s" path)
+                (Printf.sprintf "_build/default/%s/%s" dirname
+                   (remove_dot_pp basename))
             in
             log ~title:"find_source" "source_in_build = %s" source_in_build;
             if Sys.file_exists source_in_build then Found source_in_build
