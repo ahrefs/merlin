@@ -460,7 +460,7 @@ type find_source_result =
   | Not_found of File.t
   | Multiple_matches of string list
 
-let find_source ~config loc =
+let find_source ~config ~uid loc =
   log ~title:"find_source" "attempt to find %S"
     loc.Location.loc_start.Lexing.pos_fname;
   let fname = loc.Location.loc_start.Lexing.pos_fname in
@@ -501,10 +501,31 @@ let find_source ~config loc =
           match Mconfig_dot.find_project_context dir with
           | None -> Not_found file
           | Some (t, _) ->
+            let cmt_sourcefile =
+              let comp_unit =
+                match uid with
+                | Some (Shape.Uid.Item { comp_unit; _ }) -> Some comp_unit
+                | Some (Compilation_unit comp_unit) -> Some comp_unit
+                | Some (Predef _ | Internal) | None -> None
+              in
+              match comp_unit with
+              | None -> None
+              | Some comp_unit -> (
+                match load_cmt ~config comp_unit `ML with
+                | Ok (_, cmt) -> cmt.cmt_sourcefile
+                | Error () -> None)
+            in
             let source_in_build =
               let process_dir = Mconfig_dot.get_process_dir t in
+              let path =
+                match cmt_sourcefile with
+                | None -> fname
+                | Some path ->
+                  Printf.sprintf "%s/%s" (Filename.dirname path)
+                    (Filename.basename fname)
+              in
               Filename.concat process_dir
-                (Printf.sprintf "_build/default/%s" fname)
+                (Printf.sprintf "_build/default/%s" path)
             in
             log ~title:"find_source" "source_in_build = %s" source_in_build;
             if Sys.file_exists source_in_build then Found source_in_build
@@ -574,9 +595,9 @@ let find_source ~config loc =
    [find_source] doesn't like the "-o" option of the compiler. This hack handles
    Jane Street specific use case where "-o" is used to prefix a unit name by the
    name of the library which contains it. *)
-let find_source ~config loc path =
+let find_source ~config ~uid loc path =
   let result =
-    match find_source ~config loc with
+    match find_source ~config ~uid loc with
     | Found _ as result -> result
     | failure -> (
       let fname = loc.Location.loc_start.Lexing.pos_fname in
@@ -590,7 +611,7 @@ let find_source ~config loc path =
           in
           { loc with Location.loc_start = lstart }
         in
-        find_source ~config loc
+        find_source ~config ~uid loc
       with
       | Found _ as result -> result
       | _ -> failure
@@ -758,7 +779,7 @@ let from_path ~config ~env ~namespace ml_or_mli path =
       match locate ~config ~env ~ml_or_mli uid loc path namespace with
       | (`Not_found _ | `File_not_found _) as err -> err
       | `Found (uid, loc) -> (
-        match find_source ~config loc (Path.name path) with
+        match find_source ~config ~uid loc (Path.name path) with
         | `Found (file, loc) -> `Found (uid, file, loc)
         | `File_not_found _ as otherwise -> otherwise))
 
@@ -806,7 +827,7 @@ let from_string ~config ~env ~local_defs ~pos ?namespaces switch path =
       | (`File_not_found _ | `Not_found _ | `Not_in_env _) as err -> err
       | `Builtin -> `Builtin path
       | `Found (uid, loc) -> (
-        match find_source ~config loc path with
+        match find_source ~config ~uid loc path with
         | `Found (file, loc) -> `Found (uid, file, loc)
         | `File_not_found _ as otherwise -> otherwise))
   in

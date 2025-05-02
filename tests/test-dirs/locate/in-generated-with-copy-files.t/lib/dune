@@ -1,0 +1,4 @@
+(rule
+ (targets client.ml)
+ (action
+  (write-file %{targets} "let x = 42")))
