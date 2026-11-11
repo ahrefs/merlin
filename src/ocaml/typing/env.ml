@@ -994,12 +994,9 @@ let sign_of_cmi ~freshen { Persistent_env.Persistent_signature.cmi; _ } =
   in
   let mda_shape = Shape.for_persistent_unit name in
   let mda_components =
-    let mty = Subst.Lazy.of_modtype (Mty_signature sign) in
     let mty =
-      if freshen then
-        Subst.Lazy.modtype (Subst.Rescope (Path.scope path))
-          id_subst mty
-      else mty
+      if freshen then mda_declaration.mdl_type
+      else Subst.Lazy.of_modtype (Mty_signature sign)
     in
     components_of_module ~alerts ~uid:md.md_uid
       empty Subst.identity
