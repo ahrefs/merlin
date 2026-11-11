@@ -1555,7 +1555,7 @@ let find_type_expansion path env =
      private row are still considered unknown to the type system.
      Hence, this case is caught by the following clause that also handles
      purely abstract data types without manifest type definition. *)
-  | _ -> raise Not_found
+  | _ -> raise_notrace Not_found
 
 (* Find the manifest type information associated to a type, i.e.
    the necessary information for the compiler's type-based optimisations.
@@ -1568,7 +1568,7 @@ let find_type_expansion_opt path env =
      an approximation using their manifest type. *)
   | Some body ->
       (decl.type_params, body, decl.type_expansion_scope)
-  | _ -> raise Not_found
+  | _ -> raise_notrace Not_found
 
 let find_modtype_expansion_lazy path env =
   match (find_modtype_lazy path env).mtdl_type with
