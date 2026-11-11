@@ -33,6 +33,7 @@ type s =
     for_saving: bool;
     loc: Location.t option;
     make_loc_ghost: bool;
+    mutable last_compose: (s * s) option;  (* Memoized composition *)
   }
 
 type 'a subst = s
@@ -48,23 +49,27 @@ let identity =
     for_saving = false;
     loc = None;
     make_loc_ghost = false;
+    last_compose = None;
   }
 
 let unsafe x = x
 
 let add_type id p s =
-    { s with types = Path.Map.add (Pident id) (Path p) s.types }
+    { s with types = Path.Map.add (Pident id) (Path p) s.types;
+             last_compose = None }
 
 let add_module id p s =
-  { s with modules = Path.Map.add (Pident id) p s.modules }
+  { s with modules = Path.Map.add (Pident id) p s.modules;
+           last_compose = None }
 
-let add_modtype_gen p ty s = { s with modtypes = Path.Map.add p ty s.modtypes }
+let add_modtype_gen p ty s =
+  { s with modtypes = Path.Map.add p ty s.modtypes; last_compose = None }
 let add_modtype_path p p' s = add_modtype_gen p (Mty_ident p') s
 let add_modtype id p s = add_modtype_path (Pident id) p s
 
-let for_saving s = { s with for_saving = true }
-let change_locs s loc = { s with loc = Some loc }
-let make_loc_ghost s = { s with make_loc_ghost = true }
+let for_saving s = { s with for_saving = true; last_compose = None }
+let change_locs s loc = { s with loc = Some loc; last_compose = None }
+let make_loc_ghost s = { s with make_loc_ghost = true; last_compose = None }
 
 let loc s x =
   match s.loc with
@@ -826,13 +831,21 @@ and modtype scoping s t =
 and compose s1 s2 =
   if s1 == identity then s2 else
   if s2 == identity then s1 else
-  { types = merge_path_maps (type_replacement s2) s1.types s2.types;
-    modules = merge_path_maps (module_path s2) s1.modules s2.modules;
-    modtypes = merge_path_maps (modtype Keep s2) s1.modtypes s2.modtypes;
-    for_saving = s1.for_saving || s2.for_saving;
-    loc = keep_latest_loc s1.loc s2.loc;
-    make_loc_ghost = s1.make_loc_ghost || s2.make_loc_ghost;
-  }
+  match s2.last_compose with
+  | Some (t, s) when t == s1 -> s
+  | _ ->
+      let s =
+        { types = merge_path_maps (type_replacement s2) s1.types s2.types;
+          modules = merge_path_maps (module_path s2) s1.modules s2.modules;
+          modtypes = merge_path_maps (modtype Keep s2) s1.modtypes s2.modtypes;
+          for_saving = s1.for_saving || s2.for_saving;
+          loc = keep_latest_loc s1.loc s2.loc;
+          make_loc_ghost = s1.make_loc_ghost || s2.make_loc_ghost;
+          last_compose = None;
+        }
+      in
+      s2.last_compose <- Some (s1, s);
+      s
 
 
 let subst_lazy_signature_item scoping s comp =
@@ -882,10 +895,13 @@ module Unsafe = struct
 
   let add_modtype_path = add_modtype_gen
   let add_modtype id mty s = add_modtype_path (Pident id) mty s
-  let add_type_path id p s = { s with types = Path.Map.add id (Path p) s.types }
+  let add_type_path id p s =
+    { s with types = Path.Map.add id (Path p) s.types; last_compose = None }
   let add_type_function id ~params ~body s =
-    { s with types = Path.Map.add id (Type_function { params; body }) s.types }
-  let add_module_path id p s = { s with modules = Path.Map.add id p s.modules }
+    { s with types = Path.Map.add id (Type_function { params; body }) s.types;
+             last_compose = None }
+  let add_module_path id p s =
+    { s with modules = Path.Map.add id p s.modules; last_compose = None }
 
   let wrap f = match f () with
     | x -> Ok x
