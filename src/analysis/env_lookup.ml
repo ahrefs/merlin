@@ -108,12 +108,14 @@ let by_longident (nss : Namespace.inferred list) ident env =
             raise (Found (path, Constructor, cd.cstr_uid, loc))
           | `Mod ->
             log ~title:"lookup" "lookup in module namespace";
-            let path, md = Env.find_module_by_name ident env in
-            raise (Found (path, Module, md.md_uid, md.Types.md_loc))
+            let path, md = Env.find_module_by_name_lazy ident env in
+            raise (Found (path, Module, md.mdl_uid, md.Subst.Lazy.mdl_loc))
           | `Modtype ->
             log ~title:"lookup" "lookup in module type namespace";
-            let path, mtd = Env.find_modtype_by_name ident env in
-            raise (Found (path, Module_type, mtd.mtd_uid, mtd.Types.mtd_loc))
+            let path, mtd = Env.find_modtype_by_name_lazy ident env in
+            raise
+              (Found
+                 (path, Module_type, mtd.mtdl_uid, mtd.Subst.Lazy.mtdl_loc))
           | `Type ->
             log ~title:"lookup" "lookup in type namespace";
             let path, typ_decl = Env.find_type_by_name ident env in

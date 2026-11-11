@@ -62,8 +62,10 @@ let parse_longident lid =
   with Parser_raw.Error -> None
 
 let lookup_module name env =
-  let path, md = Env.find_module_by_name name env in
-  (path, md.Types.md_type, md.Types.md_attributes)
+  let path, md = Env.find_module_by_name_lazy name env in
+  ( path,
+    Subst.Lazy.force_modtype md.Subst.Lazy.mdl_type,
+    md.Subst.Lazy.mdl_attributes )
 
 let verbosity = ref Verbosity.default
 
@@ -258,14 +260,16 @@ let print_type ppf env lid =
   | Some type_expr -> Printtyp.type_expr ppf type_expr
 
 let print_modtype ppf verbosity env lid =
-  let _p, mtd = Env.find_modtype_by_name lid.Asttypes.txt env in
-  match mtd.mtd_type with
-  | Some mt -> print_short_modtype verbosity env ppf mt
+  let _p, mtd = Env.find_modtype_by_name_lazy lid.Asttypes.txt env in
+  match mtd.Subst.Lazy.mtdl_type with
+  | Some mt ->
+    print_short_modtype verbosity env ppf (Subst.Lazy.force_modtype mt)
   | None -> Format.pp_print_string ppf "(* abstract module *)"
 
 let print_modpath ppf verbosity env lid =
-  let _path, md = Env.find_module_by_name lid.Asttypes.txt env in
-  print_short_modtype verbosity env ppf md.md_type
+  let _path, md = Env.find_module_by_name_lazy lid.Asttypes.txt env in
+  print_short_modtype verbosity env ppf
+    (Subst.Lazy.force_modtype md.Subst.Lazy.mdl_type)
 
 let print_cstr_desc ppf cstr_desc =
   !Oprint.out_type ppf (Browse_misc.print_constructor cstr_desc)

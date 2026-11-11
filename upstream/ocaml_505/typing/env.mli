@@ -86,7 +86,9 @@ val find_value: Path.t -> t -> value_description
 val find_type: Path.t -> t -> type_declaration
 val find_type_descrs: Path.t -> t -> type_descriptions
 val find_module: Path.t -> t -> module_declaration
+val find_module_lazy: Path.t -> t -> Subst.Lazy.module_decl
 val find_modtype: Path.t -> t -> modtype_declaration
+val find_modtype_lazy: Path.t -> t -> Subst.Lazy.modtype_declaration
 val find_class: Path.t -> t -> class_declaration
 val find_cltype: Path.t -> t -> class_type_declaration
 
@@ -273,12 +275,14 @@ val lookup_instance_variable:
 
 val find_value_by_name:
   Longident.t -> t -> Path.t * value_description
+val find_value_by_name_lazy:
+  Longident.t -> t -> Path.t * Subst.Lazy.value_description
 val find_type_by_name:
   Longident.t -> t -> Path.t * type_declaration
-val find_module_by_name:
-  Longident.t -> t -> Path.t * module_declaration
-val find_modtype_by_name:
-  Longident.t -> t -> Path.t * modtype_declaration
+val find_module_by_name_lazy:
+  Longident.t -> t -> Path.t * Subst.Lazy.module_decl
+val find_modtype_by_name_lazy:
+  Longident.t -> t -> Path.t * Subst.Lazy.modtype_declaration
 val find_class_by_name:
   Longident.t -> t -> Path.t * class_declaration
 val find_cltype_by_name:

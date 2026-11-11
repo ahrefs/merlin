@@ -4423,7 +4423,7 @@ and type_expect_
         match desc.val_kind with
         | Val_ivar (_, cl_num) ->
             let (self_path, _) =
-              Env.find_value_by_name
+              Env.find_value_by_name_lazy
                 (Longident.Lident ("self-" ^ cl_num)) env
             in
             Texp_instvar(self_path, path,
@@ -4432,7 +4432,8 @@ and type_expect_
                            | _ -> assert false)
         | Val_self (_, _, _, cl_num) ->
             let (path, _) =
-              Env.find_value_by_name (Longident.Lident ("self-" ^ cl_num)) env
+              Env.find_value_by_name_lazy
+                (Longident.Lident ("self-" ^ cl_num)) env
             in
             Texp_ident(path, lid, desc)
         | _ ->
