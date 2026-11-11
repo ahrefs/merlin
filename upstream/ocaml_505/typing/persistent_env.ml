@@ -34,15 +34,15 @@ let error err = raise (Error err)
 module Persistent_signature = struct
   type t =
     { filename : string;
-      cmi : Cmi_format.cmi_infos;
+      cmi : Cmi_format.cmi_infos_lazy;
       visibility : Load_path.visibility }
 
   let load = ref (fun ~allow_hidden ~unit_name ->
     match Load_path.find_normalized_with_visibility (unit_name ^ ".cmi") with
     | filename, visibility when allow_hidden ->
-      Some { filename; cmi = read_cmi filename; visibility}
+      Some { filename; cmi = read_cmi_lazy filename; visibility}
     | filename, Visible ->
-      Some { filename; cmi = read_cmi filename; visibility = Visible}
+      Some { filename; cmi = read_cmi_lazy filename; visibility = Visible}
     | _, Hidden
     | exception Not_found -> None)
 end
@@ -203,7 +203,7 @@ let read_pers_struct penv val_of_pers_sig check cmi =
   let modname = Unit_info.Artifact.modname cmi in
   let filename = Unit_info.Artifact.filename cmi in
   add_import penv modname;
-  let cmi = read_cmi filename in
+  let cmi = read_cmi_lazy filename in
   let pers_sig = { Persistent_signature.filename; cmi; visibility = Visible } in
   let pm = val_of_pers_sig pers_sig in
   let ps = acknowledge_pers_struct penv check modname pers_sig pm in
@@ -325,8 +325,8 @@ let make_cmi penv modname sign alerts =
     cmi_flags = flags
   }
 
-let save_cmi penv psig pm =
-  let { Persistent_signature.filename; cmi; visibility } = psig in
+let save_cmi penv psig cmi pm =
+  let { Persistent_signature.filename; cmi = _; visibility } = psig in
   Misc.try_finally (fun () ->
       let {
         cmi_name = modname;

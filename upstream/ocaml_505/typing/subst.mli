@@ -186,6 +186,11 @@ module Lazy : sig
   val of_signature_items : signature_item list -> signature
   val of_signature_item : Types.signature_item -> signature_item
 
+  (** Signatures and types whose computation, for instance their
+      deserialization from a .cmi file, is delayed until they are needed. *)
+  val of_deferred_signature_items : signature_item list Lazy.t -> signature
+  val of_deferred_type_expr : type_expr Lazy.t -> type_expr_lazy
+
   val value_description : t -> value_description -> value_description
   val module_decl : scoping -> t -> module_decl -> module_decl
   val modtype : scoping -> t -> modtype -> modtype

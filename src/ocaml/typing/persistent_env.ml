@@ -34,7 +34,7 @@ let error err = raise (Error err)
 module Persistent_signature = struct
   type t =
     { filename : string;
-      cmi : Cmi_format.cmi_infos;
+      cmi : Cmi_format.cmi_infos_lazy;
       visibility : Load_path.visibility }
 
   let load = ref (fun ~allow_hidden ~unit_name ->
@@ -365,8 +365,8 @@ let make_cmi penv modname sign alerts =
     cmi_flags = flags
   }
 
-let save_cmi penv psig pm =
-  let { Persistent_signature.filename; cmi; visibility } = psig in
+let save_cmi penv psig cmi pm =
+  let { Persistent_signature.filename; cmi = _; visibility } = psig in
   Misc.try_finally (fun () ->
       let {
         cmi_name = modname;

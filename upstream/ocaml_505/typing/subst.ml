@@ -575,11 +575,12 @@ module Lazy_types = struct
   and signature' =
     | S_eager of Types.signature
     | S_lazy of signature_item list
+    | S_deferred of signature_item list Lazy.t
 
   and signature =
     (scoping * t * signature', signature') Lazy_backtrack.t
 
-  and type_expr_lazy = (s * type_expr, type_expr) Lazy_backtrack.t
+  and type_expr_lazy = (s * type_expr Lazy.t, type_expr) Lazy_backtrack.t
 
   and value_description =
     { vdl_type: type_expr_lazy;
@@ -668,7 +669,9 @@ let lazy_value_description (vd : Types.value_description) =
 
 let force_type_expr ty =
   Lazy_backtrack.force
-    (fun (s, ty) -> For_copy.with_scope (fun copy_scope -> typexp copy_scope s ty))
+    (fun (s, ty) ->
+       let ty = Lazy.force ty in
+       For_copy.with_scope (fun copy_scope -> typexp copy_scope s ty))
     ty
 
 let force_value_description vd =
@@ -769,7 +772,7 @@ and subst_lazy_value_description s vd =
   let vdl_type =
     match Lazy_backtrack.get_contents vd.vdl_type with
     | Left (s', ty) -> Lazy_backtrack.create (compose s' s, ty)
-    | Right ty -> Lazy_backtrack.create (s, ty)
+    | Right ty -> Lazy_backtrack.create (s, Lazy.from_val ty)
   in
   { vdl_type;
     vdl_kind = vd.vdl_kind;
@@ -798,6 +801,7 @@ and force_signature_once sg =
 
 and lazy_signature' = function
   | S_lazy sg -> sg
+  | S_deferred sg -> Lazy.force sg
   | S_eager sg -> List.map lazy_signature_item sg
 
 and force_signature_once' (scoping, s, sg) =
@@ -894,6 +898,8 @@ module Lazy = struct
   let of_signature sg = Lazy_backtrack.create_forced (S_eager sg)
   let of_signature_items sg = Lazy_backtrack.create_forced (S_lazy sg)
   let of_signature_item = lazy_signature_item
+  let of_deferred_signature_items sg = Lazy_backtrack.create_forced (S_deferred sg)
+  let of_deferred_type_expr ty = Lazy_backtrack.create (identity, ty)
 
   let value_description = subst_lazy_value_description
   let module_decl = subst_lazy_module_decl

@@ -20,21 +20,28 @@ type pers_flags =
   | Alerts of alerts
   | Opaque
 
-type cmi_infos = {
+type 'sg cmi_infos_generic = {
     cmi_name : modname;
-    cmi_sign : Types.signature_item list;
+    cmi_sign : 'sg;
     cmi_crcs : crcs;
     cmi_flags : pers_flags list;
 }
+
+type cmi_infos = Types.signature cmi_infos_generic
+
+(* Parts of the signature are only deserialized when they are forced *)
+type cmi_infos_lazy = Subst.Lazy.signature cmi_infos_generic
 
 (* write the magic + the cmi information *)
 val output_cmi : string -> out_channel -> cmi_infos -> Digest.BLAKE128.t
 
 (* read the cmi information (the magic is supposed to have already been read) *)
 val input_cmi : in_channel -> cmi_infos
+val input_cmi_lazy : in_channel -> cmi_infos_lazy
 
 (* read a cmi from a filename, checking the magic *)
 val read_cmi : string -> cmi_infos
+val read_cmi_lazy : string -> cmi_infos_lazy
 
 (* Error report *)
 

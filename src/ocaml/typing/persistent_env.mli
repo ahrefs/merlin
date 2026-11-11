@@ -33,7 +33,7 @@ val report_error_doc: error Format_doc.printer
 module Persistent_signature : sig
   type t =
     { filename : string; (** Name of the file containing the signature. *)
-      cmi : Cmi_format.cmi_infos;
+      cmi : Cmi_format.cmi_infos_lazy;
       visibility : Load_path.visibility
     }
 
@@ -91,7 +91,8 @@ val register_import_as_opaque : 'a t -> modname -> unit
 val make_cmi : 'a t -> modname -> Types.signature -> alerts
   -> Cmi_format.cmi_infos
 
-val save_cmi : 'a t -> Persistent_signature.t -> 'a -> unit
+val save_cmi :
+  'a t -> Persistent_signature.t -> Cmi_format.cmi_infos -> 'a -> unit
 
 val can_load_cmis : 'a t -> can_load_cmis
 val set_can_load_cmis : 'a t -> can_load_cmis -> unit

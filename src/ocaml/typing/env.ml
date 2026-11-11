@@ -981,24 +981,23 @@ let sign_of_cmi ~freshen { Persistent_env.Persistent_signature.cmi; _ } =
       Misc.Stdlib.String.Map.empty
       flags
   in
+  let uid = Uid.of_compilation_unit_id id in
   let md =
-    { md_type =  Mty_signature sign;
-      md_loc = Location.none;
-      md_attributes = [];
-      md_uid = Uid.of_compilation_unit_id id;
+    { Subst.Lazy.mdl_type = MtyL_signature sign;
+      mdl_loc = Location.none;
+      mdl_attributes = [];
+      mdl_uid = uid;
     }
   in
   let mda_address = Lazy_backtrack.create_forced (Aident id) in
-  let mda_declaration =
-    Subst.(Lazy.module_decl Make_local id_subst (Lazy.of_module_decl md))
-  in
+  let mda_declaration = Subst.(Lazy.module_decl Make_local id_subst md) in
   let mda_shape = Shape.for_persistent_unit name in
   let mda_components =
     let mty =
       if freshen then mda_declaration.mdl_type
-      else Subst.Lazy.of_modtype (Mty_signature sign)
+      else md.mdl_type
     in
-    components_of_module ~alerts ~uid:md.md_uid
+    components_of_module ~alerts ~uid
       empty Subst.identity
       path mda_address mty mda_shape
   in
@@ -2795,10 +2794,11 @@ let save_signature_with_transform cmi_transform ~alerts sg cmi_info =
     |> cmi_transform in
   let filename = Unit_info.Artifact.filename cmi_info in
   let pers_sig =
+    let cmi = { cmi with cmi_sign = Subst.Lazy.of_signature cmi.cmi_sign } in
     Persistent_env.Persistent_signature.{ cmi; filename; visibility = Visible }
   in
   let pm = save_sign_of_cmi pers_sig in
-  Persistent_env.save_cmi !persistent_env pers_sig pm;
+  Persistent_env.save_cmi !persistent_env pers_sig cmi pm;
   cmi
 
 let save_signature ~alerts sg cmi =
