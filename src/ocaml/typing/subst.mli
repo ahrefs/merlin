@@ -154,6 +154,16 @@ module Lazy : sig
 
   and signature
 
+  and value_description =
+    { vdl_type: type_expr_lazy;
+      vdl_kind: value_kind;
+      vdl_loc: Location.t;
+      vdl_attributes: Parsetree.attributes;
+      vdl_uid: Uid.t;
+    }
+
+  and type_expr_lazy
+
   and signature_item =
       SigL_value of Ident.t * value_description * visibility
     | SigL_type of Ident.t * type_declaration * rec_status * visibility
@@ -170,6 +180,7 @@ module Lazy : sig
     | Named of Ident.t option * modtype
 
 
+  val of_value_description : Types.value_description -> value_description
   val of_module_decl : Types.module_declaration -> module_decl
   val of_modtype : Types.module_type -> modtype
   val of_modtype_decl : Types.modtype_declaration -> modtype_declaration
@@ -177,12 +188,15 @@ module Lazy : sig
   val of_signature_items : signature_item list -> signature
   val of_signature_item : Types.signature_item -> signature_item
 
+  val value_description : t -> value_description -> value_description
   val module_decl : scoping -> t -> module_decl -> module_decl
   val modtype : scoping -> t -> modtype -> modtype
   val modtype_decl : scoping -> t -> modtype_declaration -> modtype_declaration
   val signature : scoping -> t -> signature -> signature
   val signature_item : scoping -> t -> signature_item -> signature_item
 
+  val force_type_expr : type_expr_lazy -> type_expr
+  val force_value_description : value_description -> Types.value_description
   val force_module_decl : module_decl -> Types.module_declaration
   val force_modtype : modtype -> Types.module_type
   val force_modtype_decl : modtype_declaration -> Types.modtype_declaration

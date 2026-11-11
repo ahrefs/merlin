@@ -584,6 +584,16 @@ module Lazy_types = struct
   and signature =
     (scoping * t * signature', signature') Lazy_backtrack.t
 
+  and type_expr_lazy = (s * type_expr, type_expr) Lazy_backtrack.t
+
+  and value_description =
+    { vdl_type: type_expr_lazy;
+      vdl_kind: value_kind;
+      vdl_loc: Location.t;
+      vdl_attributes: Parsetree.attributes;
+      vdl_uid: Uid.t;
+    }
+
   and signature_item =
       SigL_value of Ident.t * value_description * visibility
     | SigL_type of Ident.t * type_declaration * rec_status * visibility
@@ -653,6 +663,25 @@ let rename_bound_idents scoping s sg =
         rename_bound_idents s (SigL_typext(id',ec,es,vis) :: sg) rest
   in
   rename_bound_idents s [] sg
+
+let lazy_value_description (vd : Types.value_description) =
+  { vdl_type = Lazy_backtrack.create_forced vd.val_type;
+    vdl_kind = vd.val_kind;
+    vdl_loc = vd.val_loc;
+    vdl_attributes = vd.val_attributes;
+    vdl_uid = vd.val_uid }
+
+let force_type_expr ty =
+  Lazy_backtrack.force
+    (fun (s, ty) -> For_copy.with_scope (fun copy_scope -> typexp copy_scope s ty))
+    ty
+
+let force_value_description vd =
+  { val_type = force_type_expr vd.vdl_type;
+    val_kind = vd.vdl_kind;
+    val_loc = vd.vdl_loc;
+    val_attributes = vd.vdl_attributes;
+    val_uid = vd.vdl_uid }
 
   let rec lazy_module_decl md =
   { mdl_type = lazy_modtype md.md_type;
@@ -744,6 +773,18 @@ and force_modtype_decl mtd =
     mtd_loc = mtd.mtdl_loc;
     mtd_uid = mtd.mtdl_uid }
 
+and subst_lazy_value_description s vd =
+  let vdl_type =
+    match Lazy_backtrack.get_contents vd.vdl_type with
+    | Left (s', ty) -> Lazy_backtrack.create (compose s' s, ty)
+    | Right ty -> Lazy_backtrack.create (s, ty)
+  in
+  { vdl_type;
+    vdl_kind = vd.vdl_kind;
+    vdl_loc = loc s vd.vdl_loc;
+    vdl_attributes = attrs s vd.vdl_attributes;
+    vdl_uid = vd.vdl_uid }
+
 and subst_lazy_signature scoping s sg =
   match Lazy_backtrack.get_contents sg with
   | Left (scoping', s', sg) ->
@@ -780,7 +821,7 @@ and force_signature_once' (scoping, s, sg) =
 
 and lazy_signature_item = function
   | Sig_value(id, d, vis) ->
-     SigL_value(id, d, vis)
+     SigL_value(id, lazy_value_description d, vis)
   | Sig_type(id, d, rs, vis) ->
      SigL_type(id, d, rs, vis)
   | Sig_typext(id, ext, es, vis) ->
@@ -797,7 +838,7 @@ and lazy_signature_item = function
 and subst_lazy_signature_item' copy_scope scoping s comp =
   match comp with
     SigL_value(id, d, vis) ->
-      SigL_value(id, value_description' copy_scope s d, vis)
+      SigL_value(id, subst_lazy_value_description s d, vis)
   | SigL_type(id, d, rs, vis) ->
       SigL_type(id, type_declaration' copy_scope s d, rs, vis)
   | SigL_typext(id, ext, es, vis) ->
@@ -812,7 +853,7 @@ and subst_lazy_signature_item' copy_scope scoping s comp =
       SigL_class_type(id, cltype_declaration' copy_scope s d, rs, vis)
 
 and force_signature_item = function
-  | SigL_value(id, vd, vis) -> Sig_value(id, vd, vis)
+  | SigL_value(id, vd, vis) -> Sig_value(id, force_value_description vd, vis)
   | SigL_type(id, d, rs, vis) -> Sig_type(id, d, rs, vis)
   | SigL_typext(id, ext, es, vis) -> Sig_typext(id, ext, es, vis)
   | SigL_module(id, pres, d, rs, vis) ->
@@ -855,6 +896,7 @@ let subst_lazy_signature_item scoping s comp =
 module Lazy = struct
   include Lazy_types
 
+  let of_value_description = lazy_value_description
   let of_module_decl = lazy_module_decl
   let of_modtype = lazy_modtype
   let of_modtype_decl = lazy_modtype_decl
@@ -862,12 +904,15 @@ module Lazy = struct
   let of_signature_items sg = Lazy_backtrack.create_forced (S_lazy sg)
   let of_signature_item = lazy_signature_item
 
+  let value_description = subst_lazy_value_description
   let module_decl = subst_lazy_module_decl
   let modtype = subst_lazy_modtype
   let modtype_decl = subst_lazy_modtype_decl
   let signature = subst_lazy_signature
   let signature_item = subst_lazy_signature_item
 
+  let force_type_expr = force_type_expr
+  let force_value_description = force_value_description
   let force_module_decl = force_module_decl
   let force_modtype = force_modtype
   let force_modtype_decl = force_modtype_decl

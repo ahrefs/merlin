@@ -580,7 +580,7 @@ and address_unforced =
 and address_lazy = (address_unforced, address) Lazy_backtrack.t
 
 and value_data =
-  { vda_description : value_description;
+  { vda_description : Subst.Lazy.value_description;
     vda_address : address_lazy;
     vda_shape : Shape.t }
 
@@ -1227,7 +1227,7 @@ let find_cltype path env =
   | Papply _ | Pextra_ty _ -> raise Not_found
 
 let find_value path env =
-  (find_value_full path env).vda_description
+  Subst.Lazy.force_value_description (find_value_full path env).vda_description
 
 let find_class path env =
   (find_class_full path env).clda_declaration
@@ -1531,8 +1531,9 @@ let make_copy_of_types env0 =
   let f = function
     | Val_unbound _ as entry -> entry
     | Val_bound vda ->
-        let desc = vda.vda_description in
+        let desc = Subst.Lazy.force_value_description vda.vda_description in
         let desc = { desc with val_type = copy desc.val_type } in
+        let desc = Subst.Lazy.of_value_description desc in
         Val_bound { vda with vda_description = desc }
   in
   let values =
@@ -1797,9 +1798,9 @@ let rec components_of_module_maker
       List.iter (fun ((item : Subst.Lazy.signature_item), path) ->
         match item with
           SigL_value(id, decl, _) ->
-            let decl' = Subst.value_description sub decl in
+            let decl' = Subst.Lazy.value_description sub decl in
             let addr =
-              match decl.val_kind with
+              match decl.vdl_kind with
               | Val_prim _ -> Lazy_backtrack.create_failed Not_found
               | _ -> next_address ()
             in
@@ -1990,7 +1991,7 @@ and store_value ?check id addr decl shape env =
     (fun f -> check_usage decl.val_loc id decl.val_uid f !value_declarations)
     check;
   let vda =
-    { vda_description = decl;
+    { vda_description = Subst.Lazy.of_value_description decl;
       vda_address = addr;
       vda_shape = shape }
   in
@@ -2791,8 +2792,8 @@ let use_module ~use ~loc path mda =
 let use_value ~use ~loc path vda =
   if use then begin
     let desc = vda.vda_description in
-    mark_value_used desc.val_uid;
-    Builtin_attributes.check_alerts loc desc.val_attributes
+    mark_value_used desc.vdl_uid;
+    Builtin_attributes.check_alerts loc desc.vdl_attributes
       (Path.name path)
   end
 
@@ -2884,7 +2885,7 @@ let lookup_ident_value ~errors ~use ~loc name env =
   match IdTbl.find_name wrap_value ~mark:use name env.values with
   | (path, Val_bound vda) ->
       use_value ~use ~loc path vda;
-      path, vda.vda_description
+      path, Subst.Lazy.force_value_description vda.vda_description
   | (_, Val_unbound reason) ->
       report_value_unbound ~errors ~loc env reason (Lident name)
   | exception Not_found ->
@@ -3073,7 +3074,7 @@ let lookup_dot_value ~errors ~use ~loc l s env =
   | vda ->
       let path = Pdot(path, s.txt) in
       use_value ~use ~loc path vda;
-      (path, vda.vda_description)
+      (path, Subst.Lazy.force_value_description vda.vda_description)
   | exception Not_found ->
       may_lookup_error errors loc env (Unbound_value (Ldot(l, s), No_hint))
 
@@ -3353,7 +3354,7 @@ let lookup_all_labels_from_type ?(use=true) ~loc usage ty_path env =
 let lookup_instance_variable ?(use=true) ~loc name env =
   match IdTbl.find_name wrap_value ~mark:use name env.values with
   | (path, Val_bound vda) -> begin
-      let desc = vda.vda_description in
+      let desc = Subst.Lazy.force_value_description vda.vda_description in
       match desc.val_kind with
       | Val_ivar(mut, cl_num) ->
           use_value ~use ~loc path vda;
@@ -3496,7 +3497,8 @@ let fold_values f =
     (fun k p ve acc ->
        match ve with
        | Val_unbound _ -> acc
-       | Val_bound vda -> f k p vda.vda_description acc)
+       | Val_bound vda ->
+           f k p (Subst.Lazy.force_value_description vda.vda_description) acc)
 and fold_constructors f =
   find_all_simple_list (fun env -> env.constrs) (fun sc -> sc.comp_constrs)
     (fun cda acc -> f cda.cda_description acc)
