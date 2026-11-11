@@ -428,7 +428,7 @@ let output_cmt oc cmt =
   Marshal.(to_channel oc (cmt : cmt_infos) [Compression])
   *)
 
-let read filename =
+let read_lazy filename =
 (*  Printf.fprintf stderr "Cmt_format.read %s\n%!" filename; *)
   let ic = open_in_bin filename in
   Misc.try_finally
@@ -439,7 +439,7 @@ let read filename =
          if magic_number = Config.cmt_magic_number then
            None, Some (input_cmt ic)
          else if magic_number = Config.cmi_magic_number then
-           let cmi = Cmi_format.input_cmi ic in
+           let cmi = Cmi_format.input_cmi_lazy ic in
            let cmt = try
                let magic_number = read_magic_number ic in
                if magic_number = Config.cmt_magic_number then
@@ -455,8 +455,15 @@ let read filename =
        cmi, cmt
     )
 
+let read filename =
+  let cmi, cmt = read_lazy filename in
+  let force (cmi : Cmi_format.cmi_infos_lazy) =
+    { cmi with cmi_sign = Subst.Lazy.force_signature cmi.cmi_sign }
+  in
+  Option.map ~f:force cmi, cmt
+
 let read_cmt filename =
-  match read filename with
+  match read_lazy filename with
       _, None -> raise (Error (Not_a_typedtree filename))
     | _, Some cmt -> cmt
 
