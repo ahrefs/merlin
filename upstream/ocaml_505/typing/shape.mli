@@ -135,7 +135,8 @@ module Item : sig
 end
 
 type var = Ident.t
-type t = { uid: Uid.t option; desc: desc; approximated: bool }
+type t = private
+  { hash: int; uid: Uid.t option; desc: desc; approximated: bool }
 and desc =
   | Var of var
   | Abs of var * t
@@ -149,6 +150,9 @@ and desc =
   | Error of string
 
 val print : Format.formatter -> t -> unit
+
+val make : uid:Uid.t option -> approximated:bool -> desc -> t
+val equal : t -> t -> bool
 
 val strip_head_aliases : t -> t
 

@@ -24,8 +24,29 @@ module Uid = struct
   include Identifiable.Make(struct
     type nonrec t = t
 
-    let equal (x : t) y = x = y
-    let compare (x : t) y = compare x y
+    let rank = function
+      | Compilation_unit _ -> 0
+      | Item _ -> 1
+      | Local_opaque_item _ -> 2
+      | Internal -> 3
+      | Predef _ -> 4
+
+    let compare (x : t) y =
+      match x, y with
+      | Compilation_unit s1, Compilation_unit s2 -> String.compare s1 s2
+      | Item i1, Item i2 ->
+          let c = Int.compare i1.id i2.id in
+          if c <> 0 then c else
+          let c = String.compare i1.comp_unit i2.comp_unit in
+          if c <> 0 then c else Stdlib.compare i1.from i2.from
+      | Local_opaque_item i1, Local_opaque_item i2 ->
+          let c = Int.compare i1.id i2.id in
+          if c <> 0 then c else String.compare i1.comp_unit i2.comp_unit
+      | Internal, Internal -> 0
+      | Predef s1, Predef s2 -> String.compare s1 s2
+      | _ -> Int.compare (rank x) (rank y)
+
+    let equal x y = x == y || compare x y = 0
     let hash (x : t) = Hashtbl.hash x
 
     let pp_intf_or_impl fmt = function
@@ -151,7 +172,9 @@ end
 module Item = struct
   module T = struct
     type t = string * Sig_component_kind.t
-    let compare = compare
+    let compare (sa, (ka : Sig_component_kind.t)) (sb, kb) =
+      let c = String.compare sa sb in
+      if c <> 0 then c else Stdlib.compare ka kb
 
     let name (name, _) = name
     let kind (_, kind) = kind
@@ -183,7 +206,7 @@ module Item = struct
 end
 
 type var = Ident.t
-type t = { uid: Uid.t option; desc: desc; approximated: bool }
+type t = { hash: int; uid: Uid.t option; desc: desc; approximated: bool }
 and desc =
   | Var of var
   | Abs of var * t
@@ -262,30 +285,69 @@ let print fmt t =
   else
     Format.fprintf fmt "@[%a@]@;" aux t
 
+let hash_desc = function
+  | Var v -> Hashtbl.hash (0, v)
+  | Abs (v, t) -> Hashtbl.hash (1, v, t.hash)
+  | App (f, a) -> Hashtbl.hash (2, f.hash, a.hash)
+  | Struct m ->
+      Item.Map.fold (fun item t acc -> Hashtbl.hash (acc, item, t.hash)) m 3
+  | Pack id -> Hashtbl.hash (4, id)
+  | Alias t -> Hashtbl.hash (5, t.hash)
+  | Leaf -> 6
+  | Proj (t, item) -> Hashtbl.hash (7, t.hash, item)
+  | Comp_unit s -> Hashtbl.hash (8, s)
+  | Error s -> Hashtbl.hash (9, s)
+
+let make ~uid ~approximated desc =
+  { hash = Hashtbl.hash (uid, hash_desc desc); uid; desc; approximated }
+
+let rec equal t1 t2 =
+  t1 == t2 ||
+  (t1.hash = t2.hash
+   && Bool.equal t1.approximated t2.approximated
+   && Option.equal Uid.equal t1.uid t2.uid
+   && equal_desc t1.desc t2.desc)
+
+and equal_desc d1 d2 =
+  d1 == d2 ||
+  match d1, d2 with
+  | Var v1, Var v2 -> Ident.same v1 v2
+  | Abs (v1, t1), Abs (v2, t2) -> Ident.same v1 v2 && equal t1 t2
+  | App (f1, a1), App (f2, a2) -> equal f1 f2 && equal a1 a2
+  | Struct m1, Struct m2 -> Item.Map.equal equal m1 m2
+  | Pack id1, Pack id2 -> Ident.same id1 id2
+  | Alias t1, Alias t2 -> equal t1 t2
+  | Leaf, Leaf -> true
+  | Proj (t1, i1), Proj (t2, i2) -> Item.compare i1 i2 = 0 && equal t1 t2
+  | Comp_unit s1, Comp_unit s2 -> String.equal s1 s2
+  | Error s1, Error s2 -> String.equal s1 s2
+  | (Var _ | Abs _ | App _ | Struct _ | Pack _ | Alias _ | Leaf | Proj _
+    | Comp_unit _ | Error _), _ -> false
+
 let rec strip_head_aliases = function
   | { desc = Alias t; _ } -> strip_head_aliases t
   | t -> t
 
 let fresh_var ?(name="shape-var") uid =
   let var = Ident.create_local name in
-  var, { uid = Some uid; desc = Var var; approximated = false }
+  var, make ~uid:(Some uid) ~approximated:false (Var var)
 
 let for_unnamed_functor_param = Ident.create_local "()"
 
 let var uid id =
-  { uid = Some uid; desc = Var id; approximated = false }
+  make ~uid:(Some uid) ~approximated:false (Var id)
 
 let abs ?uid var body =
-  { uid; desc = Abs (var, body); approximated = false }
+  make ~uid ~approximated:false (Abs (var, body))
 
 let str ?uid map =
-  { uid; desc = Struct map; approximated = false }
+  make ~uid ~approximated:false (Struct map)
 
 let alias ?uid t =
-  { uid; desc = Alias t; approximated = false}
+  make ~uid ~approximated:false (Alias t)
 
 let leaf uid =
-  { uid = Some uid; desc = Leaf; approximated = false }
+  make ~uid:(Some uid) ~approximated:false Leaf
 
 let approx t = { t with approximated = true}
 
@@ -300,17 +362,17 @@ let proj ?uid t item =
       with Not_found -> approx t (* ill-typed program *)
       end
   | _ ->
-      { uid; desc = Proj (t, item); approximated = false }
+      make ~uid ~approximated:false (Proj (t, item))
 
 let app ?uid f ~arg =
-  { uid; desc = App (f, arg); approximated = false }
+  make ~uid ~approximated:false (App (f, arg))
 
 let decompose_abs t =
   match t.desc with
   | Abs (x, t) -> Some (x, t)
   | _ -> None
 let dummy_mod =
-  { uid = None; desc = Struct Item.Map.empty; approximated = false }
+  make ~uid:None ~approximated:false (Struct Item.Map.empty)
 
 let of_path ~find_shape ~namespace path =
   (* We need to handle the following cases:
@@ -336,16 +398,16 @@ let of_path ~find_shape ~namespace path =
   aux namespace path
 
 let for_persistent_unit s =
-  { uid = Some (Uid.of_compilation_unit_id (Ident.create_persistent s));
-    desc = Comp_unit s; approximated = false }
+  make ~uid:(Some (Uid.of_compilation_unit_id (Ident.create_persistent s)))
+    ~approximated:false (Comp_unit s)
 
 let leaf_for_unpack () =
   let desc = Pack (Ident.create_local "Pkg") in
-  { uid = None; desc; approximated = false }
+  make ~uid:None ~approximated:false desc
 
 let set_uid_if_none t uid =
   match t.uid with
-  | None -> { t with uid = Some uid }
+  | None -> make ~uid:(Some uid) ~approximated:t.approximated t.desc
   | _ -> t
 
 module Map = struct

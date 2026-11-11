@@ -141,20 +141,55 @@ end) = struct
 
   let approx_nf nf = { nf with approximated = true }
 
-  let in_memo_table memo_table memo_key f arg =
-    match Hashtbl.find memo_table memo_key with
-    | res -> res
-    | exception Not_found ->
-        let res = f arg in
-        Hashtbl.replace memo_table memo_key res;
-        res
+  let rec equal_local_env (e1 : local_env) e2 =
+    e1 == e2 || Ident.Map.equal (Option.equal equal_delayed_nf) e1 e2
+
+  and equal_delayed_nf (Thunk (e1, t1)) (Thunk (e2, t2)) =
+    Shape.equal t1 t2 && equal_local_env e1 e2
+
+  and equal_nf (n1 : nf) n2 =
+    n1 == n2 ||
+    (Bool.equal n1.approximated n2.approximated
+     && Option.equal Uid.equal n1.uid n2.uid
+     && equal_nf_desc n1.desc n2.desc)
+
+  and equal_nf_desc d1 d2 =
+    match d1, d2 with
+    | NVar v1, NVar v2 -> Ident.same v1 v2
+    | NApp (f1, a1), NApp (f2, a2) -> equal_nf f1 f2 && equal_nf a1 a2
+    | NAbs (e1, v1, t1, d1), NAbs (e2, v2, t2, d2) ->
+        Ident.same v1 v2 && Shape.equal t1 t2 && equal_delayed_nf d1 d2
+        && equal_local_env e1 e2
+    | NStruct m1, NStruct m2 -> Item.Map.equal equal_delayed_nf m1 m2
+    | NAlias d1, NAlias d2 -> equal_delayed_nf d1 d2
+    | NProj (n1, i1), NProj (n2, i2) ->
+        String.equal (Item.name i1) (Item.name i2)
+        && Item.kind i1 = Item.kind i2 && equal_nf n1 n2
+    | NLeaf, NLeaf -> true
+    | NPack id1, NPack id2 -> Ident.same id1 id2
+    | NComp_unit s1, NComp_unit s2 -> String.equal s1 s2
+    | NError s1, NError s2 -> String.equal s1 s2
+    | (NVar _ | NApp _ | NAbs _ | NStruct _ | NAlias _ | NProj _ | NLeaf
+      | NPack _ | NComp_unit _ | NError _), _ -> false
+
+  module Reduce_memo_table = Hashtbl.Make (struct
+    type nonrec t = local_env * t
+    let hash ((env, t) : t) = Hashtbl.hash (t.hash, env)
+    let equal ((e1, t1) : t) (e2, t2) = Shape.equal t1 t2 && equal_local_env e1 e2
+  end)
+
+  module Read_back_memo_table = Hashtbl.Make (struct
+    type t = nf
+    let hash (nf : t) = Hashtbl.hash nf
+    let equal = equal_nf
+  end)
 
   type env = {
     fuel: int ref;
     global_env: Env.t;
     local_env: local_env;
-    reduce_memo_table: (local_env * t, nf) Hashtbl.t;
-    read_back_memo_table: (nf, t) Hashtbl.t;
+    reduce_memo_table: nf Reduce_memo_table.t;
+    read_back_memo_table: t Read_back_memo_table.t;
   }
 
   let bind env var shape =
@@ -163,7 +198,12 @@ end) = struct
   let rec reduce_ env t =
     let local_env = env.local_env in
     let memo_key = (local_env, t) in
-    in_memo_table env.reduce_memo_table memo_key (reduce__ env) t
+    match Reduce_memo_table.find env.reduce_memo_table memo_key with
+    | res -> res
+    | exception Not_found ->
+        let res = reduce__ env t in
+        Reduce_memo_table.replace env.reduce_memo_table memo_key res;
+        res
   (* Memoization is absolutely essential for performance on this
      problem, because the normal forms we build can in some real-world
      cases contain an exponential amount of redundancy. Memoization
@@ -209,7 +249,7 @@ end) = struct
     ({fuel; global_env; local_env; _} as env) (t : t) =
     let reduce env t = reduce_ env t in
     let delay_reduce env t = Thunk (env.local_env, t) in
-    let return desc = { uid = t.uid; desc; approximated = t.approximated } in
+    let return desc : nf = { uid = t.uid; desc; approximated = t.approximated } in
     let rec force_aliases nf = match nf.desc with
       | NAlias delayed_nf ->
           let nf = force env delayed_nf in
@@ -277,7 +317,7 @@ end) = struct
           | exception Not_found ->
           match find_shape global_env id with
           | exception Not_found -> return (NVar id)
-          | res when res = t -> return (NVar id)
+          | res when Shape.equal res t -> return (NVar id)
           | res ->
               decr fuel;
               reduce env res
@@ -291,16 +331,20 @@ end) = struct
       | Error s -> approx_nf (return (NError s))
 
   and read_back env (nf : nf) : t =
-    in_memo_table env.read_back_memo_table nf (read_back_ env) nf
+    match Read_back_memo_table.find env.read_back_memo_table nf with
+    | res -> res
+    | exception Not_found ->
+        let res = read_back_ env nf in
+        Read_back_memo_table.replace env.read_back_memo_table nf res;
+        res
   (* The [nf] normal form we receive may contain a lot of internal
      sharing due to the use of memoization in the evaluator. We have
      to memoize here again, otherwise the sharing is lost by mapping
      over the term as a tree. *)
 
   and read_back_ env (nf : nf) : t =
-    { uid = nf.uid ;
-      desc = read_back_desc env nf.desc;
-      approximated = nf.approximated }
+    Shape.make ~uid:nf.uid ~approximated:nf.approximated
+      (read_back_desc env nf.desc)
 
   and read_back_desc env desc =
     let read_back nf = read_back env nf in
@@ -324,8 +368,8 @@ end) = struct
 
   (* Sharing the memo tables is safe at the level of a compilation unit since
     idents should be unique *)
-  let reduce_memo_table = Hashtbl.create 42
-  let read_back_memo_table = Hashtbl.create 42
+  let reduce_memo_table = Reduce_memo_table.create 42
+  let read_back_memo_table = Read_back_memo_table.create 42
 
   let reduce global_env t =
     let fuel = ref Params.fuel in

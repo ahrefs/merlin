@@ -729,7 +729,7 @@ let rec uid_of_result ~traverse_aliases = function
   | Resolved_alias (_alias, rest) when traverse_aliases ->
     uid_of_result ~traverse_aliases rest
   | Resolved_alias (alias, _rest) -> (Some alias, false)
-  | Unresolved { uid = Some uid; desc = Comp_unit _; approximated } ->
+  | Unresolved { uid = Some uid; desc = Comp_unit _; approximated; _ } ->
     (Some uid, approximated)
   | Approximated _ | Unresolved _ | Internal_error_missing_uid | Missing_uid _
     -> (None, true)
