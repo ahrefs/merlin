@@ -1157,14 +1157,14 @@ let type_of_cstr path = function
   | _ -> assert false
 
 let rec find_type_data path env =
-  match Path.Map.find path env.local_constraints with
-  | decl ->
+  match Path.Map.find_opt path env.local_constraints with
+  | Some decl ->
     {
       tda_declaration = decl;
       tda_descriptions = Type_abstract (Btype.type_origin decl);
       tda_shape = Shape.leaf decl.type_uid;
     }
-  | exception Not_found -> begin
+  | None -> begin
       match path with
       | Pident id -> IdTbl.find_same id env.types
       | Pdot(p, s) ->
